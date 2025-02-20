@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/openapi/oauth"
 	"github.com/free5gc/udm/internal/logger"
+	udm_utils "github.com/free5gc/udm/internal/utils"
 	"github.com/free5gc/udm/pkg/factory"
 	"github.com/free5gc/udm/pkg/suci"
 	"github.com/free5gc/util/idgenerator"
@@ -47,8 +49,8 @@ type UDMContext struct {
 	NfId                           string
 	GroupId                        string
 	SBIPort                        int
-	RegisterIPv4                   string // IP register to NRF
-	BindingIPv4                    string
+	RegisterIP                     string // IP register to NRF
+	BindingIP                      string
 	UriScheme                      models.UriScheme
 	NfService                      map[models.ServiceName]models.NfService
 	NFDiscoveryClient              *Nnrf_NFDiscovery.APIClient
@@ -103,34 +105,44 @@ type UdmNFContext struct {
 func InitUdmContext(context *UDMContext) {
 	config := factory.UdmConfig
 	logger.UtilLog.Info("udmconfig Info: Version[", config.Info.Version, "] Description[", config.Info.Description, "]")
+
 	configuration := config.Configuration
 	udmContext.NfId = uuid.New().String()
 	sbi := configuration.Sbi
-	udmContext.UriScheme = ""
-	udmContext.SBIPort = factory.UdmSbiDefaultPort
-	udmContext.RegisterIPv4 = factory.UdmSbiDefaultIPv4
-	if sbi != nil {
-		if sbi.Scheme != "" {
-			udmContext.UriScheme = models.UriScheme(sbi.Scheme)
-		}
-		if sbi.RegisterIPv4 != "" {
-			udmContext.RegisterIPv4 = sbi.RegisterIPv4
-		}
-		if sbi.Port != 0 {
-			udmContext.SBIPort = sbi.Port
-		}
 
-		udmContext.BindingIPv4 = os.Getenv(sbi.BindingIPv4)
-		if udmContext.BindingIPv4 != "" {
-			logger.UtilLog.Info("Parsing ServerIPv4 address from ENV Variable.")
-		} else {
-			udmContext.BindingIPv4 = sbi.BindingIPv4
-			if udmContext.BindingIPv4 == "" {
-				logger.UtilLog.Warn("Error parsing ServerIPv4 address as string. Using the 0.0.0.0 address as default.")
-				udmContext.BindingIPv4 = "0.0.0.0"
-			}
-		}
+	if sbi.Scheme != "" {
+		udmContext.UriScheme = models.UriScheme(sbi.Scheme)
+	} else {
+		udmContext.UriScheme = ""
 	}
+	if sbi.RegisterIP != "" {
+		udmContext.RegisterIP = sbi.RegisterIP
+	} else if sbi.RegisterIPv4 != "" {
+		udmContext.RegisterIP = sbi.RegisterIPv4
+	} else {
+		udmContext.RegisterIP = factory.UdmSbiDefaultIP
+	}
+	if sbi.Port != 0 {
+		udmContext.SBIPort = sbi.Port
+	} else {
+		udmContext.SBIPort = factory.UdmSbiDefaultPort
+	}
+
+	if bindingIP := os.Getenv(sbi.BindingIP); bindingIP != "" {
+		udmContext.BindingIP = bindingIP
+		logger.UtilLog.Info("Parsing ServerIP address from ENV Variable.")
+	} else if bindingIP := sbi.BindingIP; bindingIP != "" {
+		udmContext.BindingIP = bindingIP
+	} else if bindingIPv4 := os.Getenv(sbi.BindingIPv4); bindingIPv4 != "" {
+		udmContext.BindingIP = bindingIPv4
+		logger.UtilLog.Info("Parsing ServerIPv4 address from ENV Variable.")
+	} else if bindingIPv4 := sbi.BindingIPv4; bindingIPv4 != "" {
+		udmContext.BindingIP = bindingIPv4
+	} else {
+		logger.UtilLog.Warn("Error parsing ServerIPv4 address as string. Using the 0.0.0.0 address as default.")
+		udmContext.BindingIP = "0.0.0.0"
+	}
+
 	udmContext.NrfUri = configuration.NrfUri
 	context.NrfCertPem = configuration.NrfCertPem
 	servingNameList := configuration.ServiceNameList
@@ -398,12 +410,12 @@ func (context *UDMContext) GetAmfNon3gppRegContext(supi string) *models.AmfNon3G
 func (ue *UdmUeContext) GetLocationURI(types int) string {
 	switch types {
 	case LocationUriAmf3GppAccessRegistration:
-		return GetSelf().GetIPv4Uri() + factory.UdmUecmResUriPrefix + "/" + ue.Supi + "/registrations/amf-3gpp-access"
+		return GetSelf().GetIPUri() + factory.UdmUecmResUriPrefix + "/" + ue.Supi + "/registrations/amf-3gpp-access"
 	case LocationUriAmfNon3GppAccessRegistration:
-		return GetSelf().GetIPv4Uri() + factory.UdmUecmResUriPrefix + "/" + ue.Supi + "/registrations/amf-non-3gpp-access"
+		return GetSelf().GetIPUri() + factory.UdmUecmResUriPrefix + "/" + ue.Supi + "/registrations/amf-non-3gpp-access"
 	case LocationUriSmfRegistration:
 
-		return GetSelf().GetIPv4Uri() +
+		return GetSelf().GetIPUri() +
 			factory.UdmUecmResUriPrefix + "/" + ue.Supi + "/registrations/smf-registrations/" + ue.PduSessionID
 	}
 	return ""
@@ -412,9 +424,9 @@ func (ue *UdmUeContext) GetLocationURI(types int) string {
 func (ue *UdmUeContext) GetLocationURI2(types int, supi string) string {
 	switch types {
 	case LocationUriSharedDataSubscription:
-		// return GetSelf().GetIPv4Uri() + UdmSdmResUriPrefix +"/shared-data-subscriptions/" + nf.SubscriptionID
+		// return GetSelf().GetIPUri() + UdmSdmResUriPrefix +"/shared-data-subscriptions/" + nf.SubscriptionID
 	case LocationUriSdmSubscription:
-		return GetSelf().GetIPv4Uri() + factory.UdmSdmResUriPrefix + "/" + supi + "/sdm-subscriptions/"
+		return GetSelf().GetIPUri() + factory.UdmSdmResUriPrefix + "/" + supi + "/sdm-subscriptions/"
 	}
 	return ""
 }
@@ -453,13 +465,38 @@ func (ue *UdmUeContext) SameAsStoredGUAMINon3gpp(inGuami models.Guami) bool {
 	return false
 }
 
-func (context *UDMContext) GetIPv4Uri() string {
-	return fmt.Sprintf("%s://%s:%d", context.UriScheme, context.RegisterIPv4, context.SBIPort)
+func (context *UDMContext) GetIPUri() string {
+	sbiRegisterIp := udm_utils.RegisterAddr(context.RegisterIP)
+	sbiPort := uint16(context.SBIPort)
+
+	return fmt.Sprintf("%s://%s", context.UriScheme, netip.AddrPortFrom(sbiRegisterIp, sbiPort).String())
 }
 
 // GetSDMUri ... get subscriber data management service uri
 func (context *UDMContext) GetSDMUri() string {
-	return context.GetIPv4Uri() + factory.UdmSdmResUriPrefix
+	return context.GetIPUri() + factory.UdmSdmResUriPrefix
+}
+
+func GetIpEndPoint(context *UDMContext) *[]models.IpEndPoint {
+	registerAddr := udm_utils.RegisterAddr(context.RegisterIP)
+	if registerAddr.Is6() {
+		return &[]models.IpEndPoint{
+			{
+				Ipv6Address: context.RegisterIP,
+				Transport:   models.TransportProtocol_TCP,
+				Port:        int32(context.SBIPort),
+			},
+		}
+	} else if registerAddr.Is4() {
+		return &[]models.IpEndPoint{
+			{
+				Ipv4Address: context.RegisterIP,
+				Transport:   models.TransportProtocol_TCP,
+				Port:        int32(context.SBIPort),
+			},
+		}
+	}
+	return nil
 }
 
 func (context *UDMContext) InitNFService(serviceName []string, version string) {
@@ -478,14 +515,8 @@ func (context *UDMContext) InitNFService(serviceName []string, version string) {
 			},
 			Scheme:          context.UriScheme,
 			NfServiceStatus: models.NfServiceStatus_REGISTERED,
-			ApiPrefix:       context.GetIPv4Uri(),
-			IpEndPoints: &[]models.IpEndPoint{
-				{
-					Ipv4Address: context.RegisterIPv4,
-					Transport:   models.TransportProtocol_TCP,
-					Port:        int32(context.SBIPort),
-				},
-			},
+			ApiPrefix:       context.GetIPUri(),
+			IpEndPoints:     GetIpEndPoint(context),
 		}
 	}
 }
