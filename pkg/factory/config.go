@@ -13,6 +13,7 @@ import (
 	"github.com/asaskevich/govalidator"
 
 	"github.com/free5gc/udm/internal/logger"
+	udm_utils "github.com/free5gc/udm/internal/utils"
 	"github.com/free5gc/udm/pkg/suci"
 )
 
@@ -286,7 +287,11 @@ func (c *Config) GetSbiBindingAddr() string {
 	c.RLock()
 	defer c.RUnlock()
 
-	bindIP, _ := netip.ParseAddr(c.GetSbiBindingIP())
+	bindIP, err := netip.ParseAddr(c.GetSbiBindingIP())
+	if err != nil {
+		logger.CfgLog.Warnf("Logger should not be nil")
+		return ""
+	}
 	sbiPort := uint16(c.GetSbiPort())
 	return netip.AddrPortFrom(bindIP, sbiPort).String()
 }
@@ -311,7 +316,7 @@ func (c *Config) GetSbiBindingIP() string {
 			bindIP = c.Configuration.Sbi.BindingIPv4
 		}
 	}
-	return bindIP
+	return udm_utils.BindingLookup(bindIP)
 }
 
 func (c *Config) GetSbiPort() int {
