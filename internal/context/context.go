@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/google/uuid"
-
 	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/Nnrf_NFDiscovery"
 	"github.com/free5gc/openapi/models"
@@ -21,6 +19,7 @@ import (
 	"github.com/free5gc/udm/pkg/factory"
 	"github.com/free5gc/udm/pkg/suci"
 	"github.com/free5gc/util/idgenerator"
+	"github.com/google/uuid"
 )
 
 var udmContext = UDMContext{}
@@ -110,37 +109,18 @@ func InitUdmContext(context *UDMContext) {
 	udmContext.NfId = uuid.New().String()
 	sbi := configuration.Sbi
 
-	if sbi.Scheme != "" {
-		udmContext.UriScheme = models.UriScheme(sbi.Scheme)
-	} else {
-		udmContext.UriScheme = ""
-	}
-	if sbi.RegisterIP != "" {
-		udmContext.RegisterIP = sbi.RegisterIP
-	} else if sbi.RegisterIPv4 != "" {
-		udmContext.RegisterIP = sbi.RegisterIPv4
-	} else {
-		udmContext.RegisterIP = factory.UdmSbiDefaultIP
-	}
-	if sbi.Port != 0 {
-		udmContext.SBIPort = sbi.Port
-	} else {
-		udmContext.SBIPort = factory.UdmSbiDefaultPort
-	}
+	udmContext.SBIPort = sbi.Port
+	udmContext.UriScheme = models.UriScheme(sbi.Scheme)
 
 	if bindingIP := os.Getenv(sbi.BindingIP); bindingIP != "" {
 		udmContext.BindingIP = bindingIP
-		logger.UtilLog.Info("Parsing ServerIP address from ENV Variable.")
-	} else if bindingIP := sbi.BindingIP; bindingIP != "" {
-		udmContext.BindingIP = bindingIP
-	} else if bindingIPv4 := os.Getenv(sbi.BindingIPv4); bindingIPv4 != "" {
-		udmContext.BindingIP = bindingIPv4
-		logger.UtilLog.Info("Parsing ServerIPv4 address from ENV Variable.")
-	} else if bindingIPv4 := sbi.BindingIPv4; bindingIPv4 != "" {
-		udmContext.BindingIP = bindingIPv4
 	} else {
-		logger.UtilLog.Warn("Error parsing ServerIPv4 address as string. Using the 0.0.0.0 address as default.")
-		udmContext.BindingIP = "0.0.0.0"
+		udmContext.BindingIP = sbi.BindingIP
+	}
+	if registerIP := os.Getenv(sbi.RegisterIP); registerIP != "" {
+		udmContext.RegisterIP = registerIP
+	} else {
+		udmContext.RegisterIP = sbi.RegisterIP
 	}
 
 	udmContext.NrfUri = configuration.NrfUri

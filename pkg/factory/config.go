@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/asaskevich/govalidator"
-
 	"github.com/free5gc/udm/internal/logger"
 	udm_utils "github.com/free5gc/udm/internal/utils"
 	"github.com/free5gc/udm/pkg/suci"
@@ -62,7 +61,7 @@ type Info struct {
 }
 
 type Configuration struct {
-	Sbi             *Sbi               `yaml:"sbi,omitempty"  valid:"required"`
+	Sbi             *Sbi               `yaml:"sbi" valid:"optional"`
 	ServiceNameList []string           `yaml:"serviceNameList,omitempty"  valid:"required"`
 	NrfUri          string             `yaml:"nrfUri,omitempty"  valid:"required, url"`
 	NrfCertPem      string             `yaml:"nrfCertPem,omitempty" valid:"optional"`
@@ -78,6 +77,14 @@ func (c *Configuration) validate() (bool, error) {
 	if sbi := c.Sbi; sbi != nil {
 		if result, err := sbi.validate(); err != nil {
 			return result, err
+		}
+	} else {
+		sbi := Sbi{}
+		result, err := sbi.validate()
+		if err != nil {
+			return result, err
+		} else {
+			c.Sbi = &sbi
 		}
 	}
 
@@ -139,30 +146,46 @@ func (c *Config) GetCertKeyPath() string {
 }
 
 type Sbi struct {
-	Scheme       string `yaml:"scheme" valid:"in(http|https)"`
+	Scheme       string `yaml:"scheme" valid:"in(http|https),optional"`
 	RegisterIPv4 string `yaml:"registerIPv4,omitempty" valid:"host,optional"` // IP that is registered at NRF.
 	RegisterIP   string `yaml:"registerIP,omitempty" valid:"host,optional"`   // IP that is registered at NRF.
 	BindingIPv4  string `yaml:"bindingIPv4,omitempty" valid:"host,optional"`  // IP used to run the server in the node.
 	BindingIP    string `yaml:"bindingIP,omitempty" valid:"host,optional"`    // IP used to run the server in the node.
-	Port         int    `yaml:"port,omitempty" valid:"port,required,with_register,with_binding"`
+	Port         int    `yaml:"port,omitempty" valid:"port,optional"`
 	Tls          *Tls   `yaml:"tls,omitempty" valid:"optional"`
 }
 
 func (s *Sbi) validate() (bool, error) {
-	govalidator.CustomTypeTagMap.Set("with_register", func(i interface{}, context interface{}) bool {
-		switch v := context.(type) {
-		case Sbi:
-			return (v.RegisterIPv4 != "" && v.RegisterIP == "") || (v.RegisterIP != "" && v.RegisterIPv4 == "")
+	// Set a default Schme if the Configuration does not provides one
+	if s.Scheme == "" {
+		s.Scheme = UdmSbiDefaultScheme
+	}
+
+	// Set BindingIP/RegisterIP from deprecated BindingIPv4/RegisterIPv4
+	if s.BindingIP == "" && s.BindingIPv4 != "" {
+		s.BindingIP = s.BindingIPv4
+	}
+	if s.RegisterIP == "" && s.RegisterIPv4 != "" {
+		s.RegisterIP = s.RegisterIPv4
+	}
+
+	// Set a default BindingIP/RegisterIP if the Configuration does not provides them
+	if s.BindingIP == "" && s.RegisterIP == "" {
+		s.BindingIP = UdmSbiDefaultIP
+		s.RegisterIP = UdmSbiDefaultIP
+	} else {
+		// Complete any missing BindingIP/RegisterIP from RegisterIP/BindingIP
+		if s.BindingIP == "" {
+			s.BindingIP = s.RegisterIP
+		} else if s.RegisterIP == "" {
+			s.RegisterIP = s.BindingIP
 		}
-		return false
-	})
-	govalidator.CustomTypeTagMap.Set("with_binding", func(i interface{}, context interface{}) bool {
-		switch v := context.(type) {
-		case Sbi:
-			return (v.BindingIPv4 != "" && v.BindingIP == "") || (v.BindingIP != "" && v.BindingIPv4 == "")
-		}
-		return false
-	})
+	}
+
+	// Set a default Port if the Configuration does not provides one
+	if s.Port == 0 {
+		s.Port = UdmSbiDefaultPort
+	}
 
 	if tls := s.Tls; tls != nil {
 		if result, err := tls.validate(); err != nil {
