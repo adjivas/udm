@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"net/netip"
 	"os"
 	"strconv"
@@ -15,7 +16,6 @@ import (
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/openapi/oauth"
 	"github.com/free5gc/udm/internal/logger"
-	udm_utils "github.com/free5gc/udm/internal/utils"
 	"github.com/free5gc/udm/pkg/factory"
 	"github.com/free5gc/udm/pkg/suci"
 	"github.com/free5gc/util/idgenerator"
@@ -48,8 +48,8 @@ type UDMContext struct {
 	NfId                           string
 	GroupId                        string
 	SBIPort                        int
-	RegisterIP                     string // IP register to NRF
-	BindingIP                      string
+	RegisterIP                     netip.Addr // IP register to NRF
+	BindingIP                      netip.Addr
 	UriScheme                      models.UriScheme
 	NfService                      map[models.ServiceName]models.NfService
 	NFDiscoveryClient              *Nnrf_NFDiscovery.APIClient
@@ -113,15 +113,13 @@ func InitUdmContext(context *UDMContext) {
 	udmContext.UriScheme = models.UriScheme(sbi.Scheme)
 
 	if bindingIP := os.Getenv(sbi.BindingIP); bindingIP != "" {
-		udmContext.BindingIP = bindingIP
-	} else {
-		udmContext.BindingIP = sbi.BindingIP
+		sbi.BindingIP = bindingIP
 	}
 	if registerIP := os.Getenv(sbi.RegisterIP); registerIP != "" {
-		udmContext.RegisterIP = registerIP
-	} else {
-		udmContext.RegisterIP = sbi.RegisterIP
+		sbi.RegisterIP = registerIP
 	}
+	udmContext.BindingIP = resolveIP(sbi.BindingIP)
+	udmContext.RegisterIP = resolveIP(sbi.RegisterIP)
 
 	udmContext.NrfUri = configuration.NrfUri
 	context.NrfCertPem = configuration.NrfCertPem
@@ -446,10 +444,22 @@ func (ue *UdmUeContext) SameAsStoredGUAMINon3gpp(inGuami models.Guami) bool {
 }
 
 func (context *UDMContext) GetIPUri() string {
-	sbiRegisterIp := udm_utils.RegisterAddr(context.RegisterIP)
-	sbiPort := uint16(context.SBIPort)
+	addr := context.RegisterIP
+	port := context.SBIPort
 
-	return fmt.Sprintf("%s://%s", context.UriScheme, netip.AddrPortFrom(sbiRegisterIp, sbiPort).String())
+	return fmt.Sprintf("%s://%s", context.UriScheme, netip.AddrPortFrom(addr, uint16(port)).String())
+}
+
+func resolveIP(ip string) netip.Addr {
+	resolvedIPs, err := net.DefaultResolver.LookupNetIP(context.Background(), "ip", ip)
+	if err != nil {
+		logger.InitLog.Errorf("Lookup failed with %s: %+v", ip, err)
+	}
+	resolvedIP := resolvedIPs[0]
+	if resolvedIP := resolvedIP.String(); resolvedIP != ip {
+		logger.UtilLog.Infof("Lookup revolved %s into %s", ip, resolvedIP)
+	}
+	return resolvedIP
 }
 
 // GetSDMUri ... get subscriber data management service uri
@@ -458,19 +468,18 @@ func (context *UDMContext) GetSDMUri() string {
 }
 
 func GetIpEndPoint(context *UDMContext) *[]models.IpEndPoint {
-	registerAddr := udm_utils.RegisterAddr(context.RegisterIP)
-	if registerAddr.Is6() {
+	if context.RegisterIP.Is6() {
 		return &[]models.IpEndPoint{
 			{
-				Ipv6Address: context.RegisterIP,
+				Ipv6Address: context.RegisterIP.String(),
 				Transport:   models.TransportProtocol_TCP,
 				Port:        int32(context.SBIPort),
 			},
 		}
-	} else if registerAddr.Is4() {
+	} else if context.RegisterIP.Is4() {
 		return &[]models.IpEndPoint{
 			{
-				Ipv4Address: context.RegisterIP,
+				Ipv4Address: context.RegisterIP.String(),
 				Transport:   models.TransportProtocol_TCP,
 				Port:        int32(context.SBIPort),
 			},

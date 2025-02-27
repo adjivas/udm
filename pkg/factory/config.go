@@ -6,13 +6,10 @@ package factory
 
 import (
 	"fmt"
-	"net/netip"
-	"os"
 	"sync"
 
 	"github.com/asaskevich/govalidator"
 	"github.com/free5gc/udm/internal/logger"
-	udm_utils "github.com/free5gc/udm/internal/utils"
 	"github.com/free5gc/udm/pkg/suci"
 )
 
@@ -304,42 +301,6 @@ func (c *Config) GetLogReportCaller() bool {
 		return false
 	}
 	return c.Logger.ReportCaller
-}
-
-func (c *Config) GetSbiBindingAddr() string {
-	c.RLock()
-	defer c.RUnlock()
-
-	bindIP, err := netip.ParseAddr(c.GetSbiBindingIP())
-	if err != nil {
-		logger.CfgLog.Warnf("Logger should not be nil")
-		return ""
-	}
-	sbiPort := uint16(c.GetSbiPort())
-	return netip.AddrPortFrom(bindIP, sbiPort).String()
-}
-
-func (c *Config) GetSbiBindingIP() string {
-	c.RLock()
-	defer c.RUnlock()
-	bindIP := "0.0.0.0"
-	if c.Configuration == nil || c.Configuration.Sbi == nil {
-		return bindIP
-	}
-	if c.Configuration.Sbi.BindingIP != "" {
-		if bindIP = os.Getenv(c.Configuration.Sbi.BindingIP); bindIP != "" {
-			logger.CfgLog.Infof("Parsing ServerIP [%s] from ENV Variable", bindIP)
-		} else {
-			bindIP = c.Configuration.Sbi.BindingIP
-		}
-	} else if c.Configuration.Sbi.BindingIPv4 != "" {
-		if bindIP = os.Getenv(c.Configuration.Sbi.BindingIPv4); bindIP != "" {
-			logger.CfgLog.Infof("Parsing ServerIPv4 [%s] from ENV Variable", bindIP)
-		} else {
-			bindIP = c.Configuration.Sbi.BindingIPv4
-		}
-	}
-	return udm_utils.BindingLookup(bindIP)
 }
 
 func (c *Config) GetSbiPort() int {

@@ -5,7 +5,7 @@ import (
 	"net/netip"
 
 	"github.com/free5gc/openapi/models"
-	udm_utils "github.com/free5gc/udm/internal/utils"
+	"github.com/free5gc/udm/internal/logger"
 )
 
 func SearchNFServiceUri(nfProfile models.NfProfile, serviceName models.ServiceName,
@@ -43,16 +43,18 @@ func SearchNFServiceUri(nfProfile models.NfProfile, serviceName models.ServiceNa
 }
 
 func getSbiUri(scheme models.UriScheme, ipAddress string, port int32) (uri string) {
-	sbiAddr := udm_utils.RegisterAddr(ipAddress)
-	sbiPort := uint16(port)
+	addr, err := netip.ParseAddr(ipAddress)
+	if err != nil {
+		logger.InitLog.Errorf("Parse RegisterIP hostname %s failed: %+v", ipAddress, err)
+	}
 	if port != 0 {
-		uri = fmt.Sprintf("%s://%s", scheme, netip.AddrPortFrom(sbiAddr, sbiPort).String())
+		uri = fmt.Sprintf("%s://%s", scheme, netip.AddrPortFrom(addr, uint16(port)).String())
 	} else {
 		switch scheme {
 		case models.UriScheme_HTTP:
-			uri = fmt.Sprintf("%s://%s", scheme, netip.AddrPortFrom(sbiAddr, 80).String())
+			uri = fmt.Sprintf("%s://%s", scheme, netip.AddrPortFrom(addr, 80).String())
 		case models.UriScheme_HTTPS:
-			uri = fmt.Sprintf("%s://%s", scheme, netip.AddrPortFrom(sbiAddr, 443).String())
+			uri = fmt.Sprintf("%s://%s", scheme, netip.AddrPortFrom(addr, 443).String())
 		}
 	}
 	return

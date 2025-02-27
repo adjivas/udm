@@ -1,6 +1,7 @@
 package context
 
 import (
+	"net/netip"
 	"os"
 	"testing"
 
@@ -58,8 +59,8 @@ func TestInitUdmContextWithConfigIPv6(t *testing.T) {
 	InitUdmContext(GetSelf())
 
 	assert.Equal(t, udmContext.SBIPort, 8313)
-	assert.Equal(t, udmContext.RegisterIP, "2001:db8::1:0:0:13")
-	assert.Equal(t, udmContext.BindingIP, "2001:db8::1:0:0:13")
+	assert.Equal(t, udmContext.RegisterIP.String(), "2001:db8::1:0:0:13")
+	assert.Equal(t, udmContext.BindingIP.String(), "2001:db8::1:0:0:13")
 	assert.Equal(t, udmContext.UriScheme, models.UriScheme("http"))
 
 	// Close the config file
@@ -94,8 +95,8 @@ func TestInitUdmContextWithConfigIPv4(t *testing.T) {
 	InitUdmContext(GetSelf())
 
 	assert.Equal(t, udmContext.SBIPort, 8131)
-	assert.Equal(t, udmContext.RegisterIP, "127.0.0.13")
-	assert.Equal(t, udmContext.BindingIP, "127.0.0.13")
+	assert.Equal(t, udmContext.RegisterIP.String(), "::ffff:127.0.0.13")
+	assert.Equal(t, udmContext.BindingIP.String(), "::ffff:127.0.0.13")
 	assert.Equal(t, udmContext.UriScheme, models.UriScheme("http"))
 
 	// Close the config file
@@ -130,8 +131,8 @@ func TestInitUdmContextWithConfigDeprecated(t *testing.T) {
 	InitUdmContext(GetSelf())
 
 	assert.Equal(t, udmContext.SBIPort, 8003)
-	assert.Equal(t, udmContext.RegisterIP, "127.0.0.30")
-	assert.Equal(t, udmContext.BindingIP, "127.0.0.30")
+	assert.Equal(t, udmContext.RegisterIP.String(), "::ffff:127.0.0.30")
+	assert.Equal(t, udmContext.BindingIP.String(), "::ffff:127.0.0.30")
 	assert.Equal(t, udmContext.UriScheme, models.UriScheme("http"))
 
 	// Close the config file
@@ -161,8 +162,8 @@ func TestInitUdmContextWithConfigEmptySBI(t *testing.T) {
 	InitUdmContext(GetSelf())
 
 	assert.Equal(t, udmContext.SBIPort, 8000)
-	assert.Equal(t, udmContext.RegisterIP, "127.0.0.3")
-	assert.Equal(t, udmContext.BindingIP, "127.0.0.3")
+	assert.Equal(t, udmContext.RegisterIP.String(), "::ffff:127.0.0.3")
+	assert.Equal(t, udmContext.BindingIP.String(), "::ffff:127.0.0.3")
 	assert.Equal(t, udmContext.UriScheme, models.UriScheme("https"))
 
 	// Close the config file
@@ -194,8 +195,8 @@ func TestInitUdmContextWithConfigMissingRegisterIP(t *testing.T) {
 	InitUdmContext(GetSelf())
 
 	assert.Equal(t, udmContext.SBIPort, 8000)
-	assert.Equal(t, udmContext.BindingIP, "2001:db8::1:0:0:130")
-	assert.Equal(t, udmContext.RegisterIP, "2001:db8::1:0:0:130")
+	assert.Equal(t, udmContext.BindingIP.String(), "2001:db8::1:0:0:130")
+	assert.Equal(t, udmContext.RegisterIP.String(), "2001:db8::1:0:0:130")
 	assert.Equal(t, udmContext.UriScheme, models.UriScheme("https"))
 
 	// Close the config file
@@ -227,8 +228,8 @@ func TestInitUdmContextWithConfigMissingBindingIP(t *testing.T) {
 	InitUdmContext(GetSelf())
 
 	assert.Equal(t, udmContext.SBIPort, 8000)
-	assert.Equal(t, udmContext.BindingIP, "2001:db8::1:0:0:131")
-	assert.Equal(t, udmContext.RegisterIP, "2001:db8::1:0:0:131")
+	assert.Equal(t, udmContext.BindingIP.String(), "2001:db8::1:0:0:131")
+	assert.Equal(t, udmContext.RegisterIP.String(), "2001:db8::1:0:0:131")
 	assert.Equal(t, udmContext.UriScheme, models.UriScheme("https"))
 
 	// Close the config file
@@ -266,8 +267,8 @@ func TestInitUdmContextWithConfigIPv6FromEnv(t *testing.T) {
 	InitUdmContext(GetSelf())
 
 	assert.Equal(t, udmContext.SBIPort, 8313)
-	assert.Equal(t, udmContext.RegisterIP, "2001:db8::1:0:0:130")
-	assert.Equal(t, udmContext.BindingIP, "2001:db8::1:0:0:130")
+	assert.Equal(t, udmContext.RegisterIP.String(), "2001:db8::1:0:0:130")
+	assert.Equal(t, udmContext.BindingIP.String(), "2001:db8::1:0:0:130")
 	assert.Equal(t, udmContext.UriScheme, models.UriScheme("http"))
 
 	// Close the config file
@@ -276,4 +277,41 @@ func TestInitUdmContextWithConfigIPv6FromEnv(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func TestResolveIPLocalhost(t *testing.T) {
+	expectedAddr, err := netip.ParseAddr("::1")
+	if err != nil {
+		t.Errorf("invalid expected IP: %+v", expectedAddr)
+	}
+
+	addr := resolveIP("localhost")
+	if addr != expectedAddr {
+		t.Errorf("invalid IP: %+v", addr)
+	}
+	assert.Equal(t, addr, expectedAddr)
+}
+
+func TestResolveIPv4(t *testing.T) {
+	expectedAddr, err := netip.ParseAddr("::ffff:127.0.0.1")
+	if err != nil {
+		t.Errorf("invalid expected IP: %+v", expectedAddr)
+	}
+
+	addr := resolveIP("127.0.0.1")
+	if addr != expectedAddr {
+		t.Errorf("invalid IP: %+v", addr)
+	}
+}
+
+func TestResolveIPv6(t *testing.T) {
+	expectedAddr, err := netip.ParseAddr("2001:db8::1:0:0:1")
+	if err != nil {
+		t.Errorf("invalid expected IP: %+v", expectedAddr)
+	}
+
+	addr := resolveIP("2001:db8::1:0:0:1")
+	if addr != expectedAddr {
+		t.Errorf("invalid IP: %+v", addr)
+	}
 }
